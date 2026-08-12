@@ -1,4 +1,4 @@
-module Chess.Position.Ranking (URPosition, fromPosition, toPosition, sideToMoveRanking, caseRanking, wArmyStatRanking, bArmyStatRanking, guardRanking, enPassantRanking, epOppRanking, sandwichRanking, opposeRanking, pawnRanking, castleRanking, wArmyRanking, bArmyRanking, pieceRanking, emptyURPosition) where
+module Chess.Position.Ranking (URPosition, fromPosition, toPosition, sideToMoveRanking, caseRanking, wArmyStatRanking, bArmyStatRanking, guardRanking, enPassantRanking, epOppRanking, sandwichRanking, opposeRanking, pawnRanking, castleRanking, wArmyRanking, bArmyRanking, pieceRanking, emptyURPosition, urChoices) where
 
 import Data.Function
 import Data.Maybe
@@ -85,14 +85,31 @@ mkOppLists mo (f:fs) = mkOppLists mo fs ++ [ opp:opps | opp <- f, opps <- mkOppL
 
 -- create ranking of en-passant and oppose list choices
 urChoices :: URPosition -> Diagram -> Ranking (Square, Square, [Opposing])
-urChoices (URPosition { whiteToMove = wtm, wEP = wep, bEP = bep, minOpp = minopp }) diag = listRanking choices where
-  pep = if wtm then bep else wep
+urChoices pos@(URPosition { whiteToMove = wtm, fixp = ep, minOpp = minopp, wArmyStat = ArmyStat _ wp _ _, bArmyStat = ArmyStat _ bp _ _ }) diag = listRanking choices where
+  pep = if wtm then bEP pos else wEP pos
   epfile = pep `mod` 8
   eps = if wtm then [(pep-1, pep) | epfile > 0, diag!(pep-1)=='P']
                  ++ [(pep+1, pep) | epfile < 7, diag!(pep+1)=='P']
                else [(pep, pep-1) | epfile > 0, diag!(pep-1)=='p']
                  ++ [(pep, pep+1) | epfile < 7, diag!(pep+1)=='p']
-  choices = [(wep, bep, oL) | (wep, bep) <- if pep == 0 then [(0,0)] else eps, oL <- mkOppLists (max 0 minopp) . mkOpps $ diag]
+  choices = do
+    (wep', bep') <- if ep == 0 then [(0,0)] else eps
+    let 
+      wfile = wep' `mod` 8
+      bfile = bep' `mod` 8
+      fs = [0..7] \\ (if ep == 0 then [] else [wfile, bfile])
+      opps = mkOpps diag
+      mo = max 0 minopp
+    (wopp, bopp) <- if ep == 0 then [(0,0)] else 
+                      [(wo, bo) | wo <- [max 0 (mo-wp)..1], bo <- [max 0 (mo-bp)..1], wo + bo <= mo]
+    let 
+      wEPPairs = if wopp == 0 then [[]] else [[(b, wep')] | (b, w) <- opps !! wfile, w == wep']
+      bEPPairs = if bopp == 0 then [[]] else [[(bep', w)] | (b, w) <- opps !! bfile, b == bep']
+      otherOpps = mkOppLists (mo - wopp - bopp) (map (opps !!) fs)
+    wEPP <- wEPPairs
+    bEPP <- bEPPairs
+    oL_other <- otherOpps
+    return (wep', bep', merge (merge wEPP bEPP) oL_other)
 
 -- convert from Position
 fromPosition :: Position -> URPosition
